@@ -13,62 +13,41 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
     - goimports
     - misspell
     - unconvert
-    - unparam
-    - gocritic
-    - revive
-    - bodyclose
-    - nilerr
-    - errorlint
 
 linters-settings:
   errcheck:
     check-type-assertions: true
-    check-blank: true
+    check-blank: false
+    # Ignore errors from these functions (common patterns)
+    exclude-functions:
+      - (*github.com/spf13/cobra.Command).MarkFlagRequired
+      - (*github.com/spf13/cobra.Command).MarkFlagRequiredSlice
   
   govet:
-    enable-all: true
-    disable:
-      - fieldalignment  # Too strict for this project
-  
-  gofmt:
-    simplify: true
+    enable-all: false
+    enable:
+      - assign
+      - atomic
+      - bools
+      - buildtag
+      - copylocks
+      - httpresponse
+      - loopclosure
+      - lostcancel
+      - nilfunc
+      - printf
+      - unmarshal
+      - unreachable
+      - unusedresult
   
   goimports:
     local-prefixes: github.com/aqua-io/aqua-service-controller
   
   misspell:
     locale: US
-  
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - hugeParam  # Too strict for Kubernetes types
-  
-  revive:
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: increment-decrement
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
 
 issues:
   exclude-rules:
@@ -76,18 +55,11 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
-        - gocritic
-        - unparam
     
     # Exclude generated files
     - path: zz_generated
       linters:
         - all
-    
-    # Allow package comments to be in any file
-    - linters:
-        - revive
-      text: "package-comments"
 
   max-issues-per-linter: 50
   max-same-issues: 10

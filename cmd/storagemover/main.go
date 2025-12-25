@@ -367,8 +367,8 @@ func migrateVolumeCmd() *cobra.Command {
 			// Step 5: Create PVC in destination
 			fmt.Printf("Creating PVC %s/%s in destination...\n", result.PVC.Namespace, result.PVC.Name)
 			if err := destClient.Create(ctx, result.PVC); err != nil {
-				// Clean up PV if PVC creation fails
-				destClient.Delete(ctx, result.PV)
+				// Clean up PV if PVC creation fails (ignore cleanup error)
+				_ = destClient.Delete(ctx, result.PV)
 				return fmt.Errorf("failed to create destination PVC: %w", err)
 			}
 
