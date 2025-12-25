@@ -13,7 +13,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - goimports
     - misspell
     - unconvert
 
@@ -42,9 +41,6 @@ linters-settings:
       - unmarshal
       - unreachable
       - unusedresult
-  
-  goimports:
-    local-prefixes: github.com/aqua-io/aqua-service-controller
   
   misspell:
     locale: US
