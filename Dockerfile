@@ -11,10 +11,12 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum* ./
-RUN go mod download
 
 # Copy source code
 COPY . .
+
+# Download dependencies and tidy
+RUN go mod tidy && go mod download
 
 # Build the controller binary
 # Using TARGETOS and TARGETARCH for multi-platform builds
