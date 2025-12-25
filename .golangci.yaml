@@ -18,17 +18,15 @@ linters:
     - misspell
     - unconvert
 
-linters-settings:
+settings:
   errcheck:
     check-type-assertions: true
     check-blank: false
-    # Ignore errors from these functions (common patterns)
     exclude-functions:
       - (*github.com/spf13/cobra.Command).MarkFlagRequired
       - (*github.com/spf13/cobra.Command).MarkFlagRequiredSlice
   
   govet:
-    enable-all: false
     enable:
       - assign
       - atomic
@@ -47,17 +45,13 @@ linters-settings:
   misspell:
     locale: US
 
-issues:
-  exclude-rules:
-    # Exclude some linters from running on test files
-    - path: _test\.go
-      linters:
-        - errcheck
-    
-    # Exclude generated files
-    - path: zz_generated
-      linters:
-        - all
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true
 
-  max-issues-per-linter: 50
-  max-same-issues: 10
+output:
+  formats:
+    - format: colored-line-number
