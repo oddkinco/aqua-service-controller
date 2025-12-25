@@ -1,200 +1,262 @@
 # Aqua Service Controller
 
-### **1\. Architectural Overview**
+[![CI](https://github.com/oddkinco/aqua-service-controller/actions/workflows/ci.yaml/badge.svg)](https://github.com/oddkinco/aqua-service-controller/actions/workflows/ci.yaml)
+[![Security](https://github.com/oddkinco/aqua-service-controller/actions/workflows/security.yaml/badge.svg)](https://github.com/oddkinco/aqua-service-controller/actions/workflows/security.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/oddkinco/aqua-service-controller)](https://goreportcard.com/report/github.com/oddkinco/aqua-service-controller)
+[![License](https://img.shields.io/github/license/oddkinco/aqua-service-controller)](LICENSE)
 
-**Objective:** Move a running StatefulSet (STS) and its Persistent Volumes (PVs) from Source Cluster (A) to Destination Cluster (B) with data integrity as the primary constraint.
+A Kubernetes controller for live-migrating StatefulSets and their Persistent Volumes between clusters.
 
-Core Strategy: "Orphan & Adopt (Low-Index First)."  
-Because StatefulSets must scale sequentially (0 → N), we cannot move random pods. We must dismantle Cluster A and build Cluster B in the exact order: web-0 → web-1 → web-n.  
-**Infrastructure Assumptions:**
+## Overview
 
-* **Topology:** Shared VPC or Peered VPCs (Same Region).  
-* **Storage:** AWS EBS (GP2/GP3).  
-* **Connectivity:** The Controller has kubectl access (admin context) to both clusters and ec2:DescribeVolumes permissions on AWS.
+Aqua Service Controller enables zero-downtime migration of StatefulSets from one Kubernetes cluster to another, preserving data by re-attaching existing AWS EBS volumes to the destination cluster.
 
-### ---
+### Key Features
 
-**2\. The Migration Custom Resource Definition (CRD)**
+- **Live Migration** - Migrate StatefulSets pod-by-pod with minimal downtime
+- **Data Integrity** - EBS volumes are detached and re-attached, not copied
+- **Sequential Ordering** - Respects StatefulSet semantics (migrates index 0 → N)
+- **Multi-Cluster** - Operates across two clusters using kubeconfig secrets
+- **Resumable** - Failed migrations can be resumed from the last successful pod
 
-The controller will operate by reconciling a CRD located in a "Management Namespace" (likely on Cluster B or a separate management cluster).
+### Use Cases
 
-**StatefulSetMigration Spec:**
+- Cluster upgrades (migrate workloads to a new cluster)
+- Region/AZ migrations within the same AWS region
+- Kubernetes version upgrades
+- Infrastructure consolidation
 
-Go
+## Prerequisites
 
-type StatefulSetMigrationSpec struct {  
-    // Unique identifier for the migration  
-    MigrationID string \`json:"migrationId"\`
+- Two Kubernetes clusters in the same AWS region (or peered VPCs)
+- AWS EBS volumes (gp2, gp3, io1, io2)
+- AWS credentials with `ec2:DescribeVolumes` permission
+- kubectl access to both clusters
 
-    // Source Cluster details  
-    SourceCluster ContextRef \`json:"sourceCluster"\`  
-    SourceNamespace string   \`json:"sourceNamespace"\`  
-    StatefulSetName string   \`json:"statefulSetName"\`
+## Installation
 
-    // Destination Cluster details  
-    DestCluster   ContextRef \`json:"destCluster"\`  
-    DestNamespace string     \`json:"destNamespace"\`  
-      
-    // Configuration  
-    Force bool \`json:"force"\` // Ignore non-critical pre-flight warnings  
-}
+### Using kubectl
 
-type ContextRef struct {  
-    KubeConfigSecret string \`json:"kubeConfigSecret"\` // Secret containing kubeconfig  
-}
+```bash
+# Install CRD
+kubectl apply -f https://raw.githubusercontent.com/oddkinco/aqua-service-controller/main/config/crd/migration.aqua.io_statefulsetmigrations.yaml
 
-Status (State Machine):  
-Pending → PreFlightChecks → FreezingSource → MigratingPods (Loop) → Finalizing → Completed (or Failed)
+# Install controller
+kubectl apply -f https://raw.githubusercontent.com/oddkinco/aqua-service-controller/main/config/rbac/role.yaml
+kubectl apply -f https://raw.githubusercontent.com/oddkinco/aqua-service-controller/main/config/manager/manager.yaml
+```
 
-### ---
+### Using Helm (coming soon)
 
-**3\. Detailed Workflow Stages**
+```bash
+helm repo add aqua https://oddkinco.github.io/aqua-service-controller
+helm install aqua-controller aqua/aqua-service-controller
+```
 
-#### **Phase 1: Pre-Flight Checks & Validation**
+## Quick Start
 
-*Before modifying any resources, the controller validates the environment.*
+### 1. Create kubeconfig secrets
 
-1. **Cluster Connectivity:** Verify API access to both A and B.  
-2. **Namespace Existence:** Ensure DestNamespace exists in Cluster B.  
-3. **Conflict Check:** Ensure no STS with the same name exists in Cluster B.  
-4. **Storage Class Match:** Ensure the StorageClass used in A exists in B (or map it).  
-5. **Service Dependency:** Verify the Headless Service associated with the STS is already created in Cluster B (or create it now).  
-6. **AWS Permissions:** Verify the controller can read volume states in AWS.
+```bash
+# Create secrets containing kubeconfig for each cluster
+kubectl create secret generic source-cluster-kubeconfig \
+  --from-file=kubeconfig=/path/to/source-cluster.yaml
 
-#### **Phase 2: The Freeze (Source Preparation)**
+kubectl create secret generic dest-cluster-kubeconfig \
+  --from-file=kubeconfig=/path/to/dest-cluster.yaml
+```
 
-*Objective: Prepare Cluster A for disassembly without deleting data.*
+### 2. Prepare the destination cluster
 
-1. **Patch PV Reclaim Policy:**  
-   * List all PVCs for the STS in Cluster A.  
-   * Find bound PVs.  
-   * Patch all PVs to persistentVolumeReclaimPolicy: Retain. (**CRITICAL SAFETY STEP**)  
-2. **Orphan the STS:**  
-   * Delete the **StatefulSet Object** in Cluster A using DeletePropagationForeground or Orphan.  
-   * *Result:* The STS definition is removed, but **Pods remain running** and **PVCs remain bound**.
+```bash
+# Create namespace in destination
+kubectl --context=dest-cluster create namespace production
 
-#### **Phase 3: The Migration Loop (The "Swing")**
+# Create the headless service (required for StatefulSet)
+kubectl --context=dest-cluster apply -f my-headless-service.yaml -n production
+```
 
-*The controller iterates from Index i \= 0 to Replicas \- 1\.*
+### 3. Create a migration
 
-**Step 3a: Terminate Source Pod**
+```yaml
+apiVersion: migration.aqua.io/v1alpha1
+kind: StatefulSetMigration
+metadata:
+  name: migrate-web
+spec:
+  migrationId: "web-migration-001"
+  
+  sourceCluster:
+    kubeConfigSecret: source-cluster-kubeconfig
+  sourceNamespace: production
+  statefulSetName: web
+  
+  destCluster:
+    kubeConfigSecret: dest-cluster-kubeconfig
+  destNamespace: production
+```
 
-* Delete Pod web-i in Cluster A.  
-* Wait for Pod to disappear from API.
+```bash
+kubectl apply -f migration.yaml
+```
 
-**Step 3b: Ensure Volume Detachment (The Hardest Part)**
+### 4. Monitor progress
 
-* Retrieve the EBS Volume ID associated with the PV for web-i.  
-* **AWS Polling Loop:** Call ec2.DescribeVolumes.  
-* Block until State \== "available".  
-* *Timeout Safety:* If this takes \> 5 mins, pause and alert (manual intervention may be required for "stuck" attachments).
+```bash
+# Watch migration status
+kubectl get statefulsetmigration migrate-web -w
 
-**Step 3c: Hydrate Destination Storage**
+# View detailed status
+kubectl describe statefulsetmigration migrate-web
+```
 
-* **Create PV in B:** Construct a PV object in Cluster B.  
-  * volumeHandle: The AWS Volume ID from Step 3b.  
-  * claimRef: namespace: DestNamespace, name: data-web-i.  
-* **Create PVC in B:** Construct a PVC object in Cluster B.  
-  * volumeName: The name of the PV created above.  
-  * This pre-binds the PVC to the existing physical disk.
+## Configuration
 
-**Step 3d: Scale Destination**
+### StatefulSetMigration Spec
 
-* **First Iteration (i=0):** Create the StatefulSet definition in Cluster B with replicas: 1\.  
-* **Subsequent Iterations:** Patch STS in Cluster B to replicas: i \+ 1\.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `migrationId` | string | Yes | Unique identifier for this migration |
+| `sourceCluster.kubeConfigSecret` | string | Yes | Secret containing source cluster kubeconfig |
+| `sourceNamespace` | string | Yes | Namespace in source cluster |
+| `statefulSetName` | string | Yes | Name of StatefulSet to migrate |
+| `destCluster.kubeConfigSecret` | string | Yes | Secret containing destination cluster kubeconfig |
+| `destNamespace` | string | Yes | Namespace in destination cluster |
+| `force` | bool | No | Ignore non-critical warnings (default: false) |
+| `storageClassMapping` | map | No | Map source StorageClass to destination |
+| `volumeDetachTimeout` | duration | No | Timeout for volume detachment (default: 5m) |
+| `podReadyTimeout` | duration | No | Timeout for pod readiness (default: 10m) |
 
-**Step 3e: Health Check**
+### Example with options
 
-* Wait for web-i in Cluster B to reach Ready status.  
-* If Ready, increment i and repeat loop.
+```yaml
+apiVersion: migration.aqua.io/v1alpha1
+kind: StatefulSetMigration
+metadata:
+  name: migrate-database
+spec:
+  migrationId: "db-migration-001"
+  sourceCluster:
+    kubeConfigSecret: old-cluster
+  sourceNamespace: databases
+  statefulSetName: postgres
+  destCluster:
+    kubeConfigSecret: new-cluster
+  destNamespace: databases
+  storageClassMapping:
+    gp2: gp3  # Upgrade storage class during migration
+  volumeDetachTimeout: 10m
+  podReadyTimeout: 15m
+```
 
-#### **Phase 4: Finalization**
+## CLI Tool
 
-1. **Network Cutover:** If using an external LoadBalancer or Ingress, update it to point to Cluster B services.  
-2. **Garbage Collection (Source):**  
-   * Delete the old PVCs in Cluster A.  
-   * Delete the old PV objects in Cluster A.  
-   * (Note: Because we set ReclaimPolicy to Retain in Phase 2, this deletes the K8s objects but leaves the EBS volumes alone, which are now attached to Cluster B).
+The `storagemover` CLI is included for testing and debugging:
 
-### ---
+```bash
+# Build the CLI
+make build-cli
 
-**4\. Technical Implementation Specifics (Go)**
+# Inspect a PV
+./bin/storagemover inspect-pv --source-kubeconfig=~/.kube/config --name=pvc-xxx
 
-#### **AWS Volume Polling Logic**
+# Test PV translation (dry-run)
+./bin/storagemover translate \
+  --source-kubeconfig=~/.kube/source.yaml \
+  --namespace=default \
+  --name=data-web-0 \
+  --dest-namespace=production
 
-Do not rely on Kubernetes PV status alone. It is often eventually consistent. Query the source of truth.
+# Wait for volume detachment
+./bin/storagemover wait-detach \
+  --volume-id=vol-0123456789abcdef0 \
+  --aws-region=us-east-1
+```
 
-Go
+## Migration Phases
 
-func (r \*Reconciler) waitForEBSDetach(ctx context.Context, volumeID string) error {  
-    ticker := time.NewTicker(5 \* time.Second)  
-    defer ticker.Stop()  
-      
-    for {  
-        select {  
-        case \<-ctx.Done():  
-            return ctx.Err()  
-        case \<-ticker.C:  
-            resp, err := r.ec2Client.DescribeVolumes(ctx, \&ec2.DescribeVolumesInput{  
-                VolumeIds: \[\]string{volumeID},  
-            })  
-            if err \!= nil {  
-                return err  
-            }  
-              
-            if len(resp.Volumes) \> 0 && resp.Volumes\[0\].State \== types.VolumeStateAvailable {  
-                return nil // Success, volume is ready to be attached to B  
-            }  
-            // Log: Still attached... waiting  
-        }  
-    }  
-}
+| Phase | Description |
+|-------|-------------|
+| `Pending` | Migration created, waiting to start |
+| `PreFlightChecks` | Validating clusters, namespaces, and resources |
+| `FreezingSource` | Setting PV reclaim policy to Retain, orphaning StatefulSet |
+| `MigratingPods` | Migrating pods one by one (0 → N) |
+| `Finalizing` | Cleaning up source cluster resources |
+| `Completed` | Migration finished successfully |
+| `Failed` | Error occurred, check `status.lastError` |
 
-#### **Reconstructing the PV**
+## Documentation
 
-When creating the PV in Cluster B, you must replicate the **Node Affinity** if your clusters are topology-aware.
+- [Architecture](docs/architecture.md) - Detailed design and workflow documentation
+- [Contributing](CONTRIBUTING.md) - How to contribute to the project
+- [Security](/.github/SECURITY.md) - Security policy and vulnerability reporting
 
-Go
+## Development
 
-// When creating PV in Cluster B  
-nodeAffinity := \&corev1.VolumeNodeAffinity{  
-    Required: \&corev1.NodeSelector{  
-        NodeSelectorTerms: \[\]corev1.NodeSelectorTerm{  
-            {  
-                MatchExpressions: \[\]corev1.NodeSelectorRequirement{  
-                    {  
-                        Key:      "topology.kubernetes.io/zone",  
-                        Operator: corev1.NodeSelectorOpIn,  
-                        Values:   \[\]string{originalZone}, // Must match volume's AZ  
-                    },  
-                },  
-            },  
-        },  
-    },  
-}
+### Prerequisites
 
-### **5\. Failure & Rollback Strategy**
+- Go 1.22+
+- Docker
+- kubectl
+- AWS credentials (for EBS operations)
 
-Since we are moving state, "Rollback" is actually just "Migrating back."
+### Build
 
-**Scenario: Failure at Index 2 (0 and 1 are in B; 2, 3, 4 are in A)**
+```bash
+# Build controller
+make build
 
-1. **Pause:** The controller stops. It reports Status: Failed.  
-2. **Operator Decision:** A human must decide to "Roll Forward" (fix the error) or "Roll Back".  
-3. **Rollback Procedure:**  
-   * Scale STS in Cluster B to 0\.  
-   * Delete STS in B.  
-   * Reverse the "Hydrate Storage" logic: Delete PV/PVCs in B (Retain policy\!), recreate them in A.  
-   * Re-create STS in A with replicas: 5\.
+# Build CLI
+make build-cli
 
-### **6\. Recommended Development Phases**
+# Build both
+make build-all
 
-1. **Phase 1 (The Storage Mover):** Write a standalone Go CLI tool that takes a PVC from Cluster A, detaches it, and creates the valid PV/PVC pair in Cluster B. **Test this extensively.** If this fails, the whole controller fails.  
-2. **Phase 2 (The Controller Skeleton):** Build the CRD and the basic state machine logic (Pending \-\> Success) without doing actual work.  
-3. **Phase 3 (Integration):** Plug the storage mover logic into the controller loop.
+# Run tests
+make test
 
-### **7\. Immediate Next Step for You**
+# Run linter
+make lint
+```
 
-I recommend starting with **Phase 1** (The Storage Mover CLI).
+### Run locally
 
-Would you like me to generate the **Go code for the PV/PVC Translation function**? This function needs to take a corev1.PersistentVolume from Cluster A and return the corev1.PersistentVolume and corev1.PersistentVolumeClaim structs required for Cluster B.
+```bash
+# Run controller against current kubeconfig
+make run
+```
+
+### Docker
+
+```bash
+# Build image
+make docker-build IMG=my-registry/aqua-service-controller:dev
+
+# Push image
+make docker-push IMG=my-registry/aqua-service-controller:dev
+```
+
+## Limitations
+
+- **AWS EBS only** - Currently supports AWS EBS volumes (CSI and legacy)
+- **Same region** - Source and destination clusters must be in the same AWS region
+- **Single volume claim template** - Currently assumes StatefulSets have one volume claim template named "data"
+- **Manual service setup** - Headless service must be created in destination before migration
+
+## Roadmap
+
+- [ ] Support for multiple volume claim templates
+- [ ] Helm chart
+- [ ] GCP Persistent Disk support
+- [ ] Azure Disk support
+- [ ] Automatic headless service creation
+- [ ] Migration pause/resume commands
+- [ ] Prometheus metrics
+
+## License
+
+[Apache License 2.0](LICENSE)
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
