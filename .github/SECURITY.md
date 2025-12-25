@@ -2,10 +2,11 @@
 
 ## Supported Versions
 
+This project is currently in alpha development. Security updates will be applied to:
+
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 0.x.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
@@ -13,23 +14,23 @@ We take security seriously. If you discover a security vulnerability in the Aqua
 
 ### How to Report
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+Please report security vulnerabilities through one of these methods:
 
-Instead, please report them via one of these methods:
+1. **GitHub Security Advisories** (Preferred): Use the [Security Advisories](../../security/advisories) feature to privately report a vulnerability.
 
-1. **GitHub Security Advisories**: Use the [Security Advisories](../../security/advisories) feature to privately report a vulnerability.
+2. **GitHub Issues**: For less sensitive security concerns, you can open an issue on the [GitHub Issues](../../issues) page with the `security` label.
 
-2. **Email**: Send an email to security@aqua.io with:
-   - A description of the vulnerability
-   - Steps to reproduce the issue
-   - Potential impact assessment
-   - Any suggested fixes (optional)
+When reporting, please include:
+- A description of the vulnerability
+- Steps to reproduce the issue
+- Potential impact assessment
+- Any suggested fixes (optional)
 
 ### What to Expect
 
-- **Initial Response**: Within 48 hours, we will acknowledge receipt of your report.
-- **Assessment**: Within 7 days, we will provide an initial assessment of the vulnerability.
-- **Resolution Timeline**: We aim to release patches for critical vulnerabilities within 30 days.
+- **Initial Response**: We aim to acknowledge reports within 48 hours.
+- **Assessment**: We will provide an initial assessment as soon as possible.
+- **Resolution**: We prioritize security fixes and aim to address critical vulnerabilities promptly.
 
 ### Disclosure Policy
 

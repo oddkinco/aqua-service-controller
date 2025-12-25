@@ -15,8 +15,6 @@ updates:
     labels:
       - "dependencies"
       - "go"
-    reviewers:
-      - "aqua-io/maintainers"
     groups:
       # Group Kubernetes-related dependencies together
       kubernetes:
