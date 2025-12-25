@@ -28,7 +28,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v4
@@ -47,10 +50,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
 
       - name: Download dependencies
-        run: go mod download
+        run: |
+          go mod tidy
+          go mod download
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -76,7 +81,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Build controller
         run: |
@@ -162,7 +170,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: false
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Build release binaries
         run: |
