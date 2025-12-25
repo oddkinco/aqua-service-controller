@@ -45,13 +45,3 @@ settings:
   misspell:
     locale: US
 
-formatters:
-  enable:
-    - gofmt
-  settings:
-    gofmt:
-      simplify: true
-
-output:
-  formats:
-    - format: colored-line-number
