@@ -1,0 +1,73 @@
+# Example StatefulSetMigration resource
+#
+# This example shows how to migrate a StatefulSet named "web" from
+# cluster-a to cluster-b.
+#
+# Prerequisites:
+# 1. Create kubeconfig secrets for both clusters:
+#    kubectl create secret generic cluster-a-kubeconfig --from-file=kubeconfig=~/.kube/cluster-a.yaml
+#    kubectl create secret generic cluster-b-kubeconfig --from-file=kubeconfig=~/.kube/cluster-b.yaml
+#
+# 2. Ensure the destination namespace exists in cluster-b
+# 3. Ensure the headless service exists in cluster-b (required for StatefulSet)
+# 4. The controller needs AWS credentials with ec2:DescribeVolumes permission
+---
+apiVersion: migration.aqua.io/v1alpha1
+kind: StatefulSetMigration
+metadata:
+  name: web-migration
+  namespace: default
+spec:
+  # Unique identifier for this migration
+  migrationId: "web-migration-001"
+
+  # Source cluster configuration
+  sourceCluster:
+    kubeConfigSecret: cluster-a-kubeconfig
+    kubeConfigKey: kubeconfig  # optional, defaults to "kubeconfig"
+  sourceNamespace: production
+
+  # StatefulSet to migrate
+  statefulSetName: web
+
+  # Destination cluster configuration
+  destCluster:
+    kubeConfigSecret: cluster-b-kubeconfig
+    kubeConfigKey: kubeconfig
+  destNamespace: production
+
+  # Optional: ignore non-critical warnings (like missing headless service)
+  force: false
+
+  # Optional: map storage classes between clusters
+  # storageClassMapping:
+  #   gp2: gp3
+  #   standard: premium-rwo
+
+  # Optional: timeout for EBS volume detachment (default: 5m)
+  volumeDetachTimeout: 5m
+
+  # Optional: timeout for pod readiness (default: 10m)
+  podReadyTimeout: 10m
+---
+# Example: Migration with storage class mapping
+apiVersion: migration.aqua.io/v1alpha1
+kind: StatefulSetMigration
+metadata:
+  name: db-migration
+  namespace: default
+spec:
+  migrationId: "db-migration-001"
+  sourceCluster:
+    kubeConfigSecret: prod-cluster-kubeconfig
+  sourceNamespace: databases
+  statefulSetName: postgres
+  destCluster:
+    kubeConfigSecret: dr-cluster-kubeconfig
+  destNamespace: databases
+  # Map old storage class to new one
+  storageClassMapping:
+    gp2: gp3
+  # Longer timeout for database volumes
+  volumeDetachTimeout: 10m
+  podReadyTimeout: 15m

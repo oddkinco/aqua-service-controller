@@ -1,0 +1,194 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: statefulsetmigrations.migration.aqua.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: migration.aqua.io
+  names:
+    kind: StatefulSetMigration
+    listKind: StatefulSetMigrationList
+    plural: statefulsetmigrations
+    singular: statefulsetmigration
+    shortNames:
+      - stsm
+      - stsmigration
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          description: StatefulSetMigration is the Schema for the statefulsetmigrations API
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: StatefulSetMigrationSpec defines the desired state of StatefulSetMigration
+              type: object
+              required:
+                - migrationId
+                - sourceCluster
+                - sourceNamespace
+                - statefulSetName
+                - destCluster
+                - destNamespace
+              properties:
+                migrationId:
+                  description: MigrationID is a unique identifier for this migration
+                  type: string
+                sourceCluster:
+                  description: SourceCluster contains the reference to the source cluster kubeconfig
+                  type: object
+                  required:
+                    - kubeConfigSecret
+                  properties:
+                    kubeConfigSecret:
+                      description: KubeConfigSecret is the name of the Secret containing the kubeconfig
+                      type: string
+                    kubeConfigKey:
+                      description: KubeConfigKey is the key in the secret containing the kubeconfig
+                      type: string
+                      default: kubeconfig
+                sourceNamespace:
+                  description: SourceNamespace is the namespace of the StatefulSet in the source cluster
+                  type: string
+                statefulSetName:
+                  description: StatefulSetName is the name of the StatefulSet to migrate
+                  type: string
+                destCluster:
+                  description: DestCluster contains the reference to the destination cluster kubeconfig
+                  type: object
+                  required:
+                    - kubeConfigSecret
+                  properties:
+                    kubeConfigSecret:
+                      description: KubeConfigSecret is the name of the Secret containing the kubeconfig
+                      type: string
+                    kubeConfigKey:
+                      description: KubeConfigKey is the key in the secret containing the kubeconfig
+                      type: string
+                      default: kubeconfig
+                destNamespace:
+                  description: DestNamespace is the namespace to migrate to in the destination cluster
+                  type: string
+                force:
+                  description: Force ignores non-critical pre-flight warnings
+                  type: boolean
+                  default: false
+                storageClassMapping:
+                  description: StorageClassMapping maps source StorageClass names to destination StorageClass names
+                  type: object
+                  additionalProperties:
+                    type: string
+                volumeDetachTimeout:
+                  description: VolumeDetachTimeout is the maximum time to wait for a volume to detach
+                  type: string
+                podReadyTimeout:
+                  description: PodReadyTimeout is the maximum time to wait for a pod to become ready
+                  type: string
+            status:
+              description: StatefulSetMigrationStatus defines the observed state of StatefulSetMigration
+              type: object
+              properties:
+                phase:
+                  description: Phase is the current phase of the migration
+                  type: string
+                  enum:
+                    - Pending
+                    - PreFlightChecks
+                    - FreezingSource
+                    - MigratingPods
+                    - Finalizing
+                    - Completed
+                    - Failed
+                currentIndex:
+                  description: CurrentIndex is the index of the pod currently being migrated
+                  type: integer
+                totalReplicas:
+                  description: TotalReplicas is the total number of replicas to migrate
+                  type: integer
+                migratedPods:
+                  description: MigratedPods contains information about successfully migrated pods
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      index:
+                        type: integer
+                      podName:
+                        type: string
+                      volumeId:
+                        type: string
+                      migratedAt:
+                        type: string
+                        format: date-time
+                conditions:
+                  description: Conditions represent the latest available observations
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - lastTransitionTime
+                      - reason
+                      - message
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                lastError:
+                  description: LastError contains the last error message if Phase is Failed
+                  type: string
+                startTime:
+                  description: StartTime is when the migration started
+                  type: string
+                  format: date-time
+                completionTime:
+                  description: CompletionTime is when the migration completed
+                  type: string
+                  format: date-time
+                sourceStatefulSetUID:
+                  description: SourceStatefulSetUID is the UID of the source StatefulSet
+                  type: string
+                preservedPVs:
+                  description: PreservedPVs contains the list of PV names that have been set to Retain
+                  type: array
+                  items:
+                    type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Progress
+          type: string
+          jsonPath: .status.currentIndex
+        - name: Total
+          type: string
+          jsonPath: .status.totalReplicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
