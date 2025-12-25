@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -77,7 +77,7 @@ func inspectPVCmd() *cobra.Command {
 			}
 
 			pv := &corev1.PersistentVolume{}
-			if err := client.Get(ctx, client.ObjectKey{Name: pvName}, pv); err != nil {
+			if err := client.Get(ctx, types.NamespacedName{Name: pvName}, pv); err != nil {
 				return fmt.Errorf("failed to get PV: %w", err)
 			}
 
@@ -109,7 +109,7 @@ func inspectPVCCmd() *cobra.Command {
 			}
 
 			pvc := &corev1.PersistentVolumeClaim{}
-			if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: pvcName}, pvc); err != nil {
+			if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: pvcName}, pvc); err != nil {
 				return fmt.Errorf("failed to get PVC: %w", err)
 			}
 
@@ -118,7 +118,7 @@ func inspectPVCCmd() *cobra.Command {
 			// Also get the bound PV
 			if pvc.Spec.VolumeName != "" {
 				pv := &corev1.PersistentVolume{}
-				if err := c.Get(ctx, client.ObjectKey{Name: pvc.Spec.VolumeName}, pv); err == nil {
+				if err := c.Get(ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err == nil {
 					fmt.Println("\nBound PV:")
 					printPVInfo(pv)
 				}
@@ -156,13 +156,13 @@ func translateCmd() *cobra.Command {
 
 			// Get source PVC
 			pvc := &corev1.PersistentVolumeClaim{}
-			if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: pvcName}, pvc); err != nil {
+			if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: pvcName}, pvc); err != nil {
 				return fmt.Errorf("failed to get PVC: %w", err)
 			}
 
 			// Get source PV
 			pv := &corev1.PersistentVolume{}
-			if err := c.Get(ctx, client.ObjectKey{Name: pvc.Spec.VolumeName}, pv); err != nil {
+			if err := c.Get(ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
 				return fmt.Errorf("failed to get PV: %w", err)
 			}
 
@@ -313,12 +313,12 @@ func migrateVolumeCmd() *cobra.Command {
 			// Step 1: Get source PVC and PV
 			fmt.Printf("Getting source PVC %s/%s...\n", sourceNamespace, pvcName)
 			sourcePVC := &corev1.PersistentVolumeClaim{}
-			if err := sourceClient.Get(ctx, client.ObjectKey{Namespace: sourceNamespace, Name: pvcName}, sourcePVC); err != nil {
+			if err := sourceClient.Get(ctx, types.NamespacedName{Namespace: sourceNamespace, Name: pvcName}, sourcePVC); err != nil {
 				return fmt.Errorf("failed to get source PVC: %w", err)
 			}
 
 			sourcePV := &corev1.PersistentVolume{}
-			if err := sourceClient.Get(ctx, client.ObjectKey{Name: sourcePVC.Spec.VolumeName}, sourcePV); err != nil {
+			if err := sourceClient.Get(ctx, types.NamespacedName{Name: sourcePVC.Spec.VolumeName}, sourcePV); err != nil {
 				return fmt.Errorf("failed to get source PV: %w", err)
 			}
 
@@ -410,7 +410,7 @@ func validateCmd() *cobra.Command {
 			}
 
 			pv := &corev1.PersistentVolume{}
-			if err := c.Get(ctx, client.ObjectKey{Name: pvName}, pv); err != nil {
+			if err := c.Get(ctx, types.NamespacedName{Name: pvName}, pv); err != nil {
 				return fmt.Errorf("failed to get PV: %w", err)
 			}
 
